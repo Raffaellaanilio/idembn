@@ -72,138 +72,167 @@ function togglePanel() {
 
 map.on('load', () => {
     // Agrega la fuente raster solo si no existe
-
     map.setLayoutProperty('Country labels', 'text-field', ['get', 'name:es']);
 
-   map.addSource('comunasSource', {
-        type: "raster",
-        tiles: [
-            "https://geoportal.cepal.org/geoserver/geonode/wms?service=WMS&version=1.1.0&request=GetMap&layers=geonode%3Acomunas_chile_3857_lineas&bbox={bbox-epsg-3857}&transparent=true&width=256&height=246&srs=EPSG%3A3857&styles=&format=image%2Fpng",
-        ],
-        tileSize: 256,
-    });
+    // Agregar la fuente y la capa raster al mapa
+    if (!map.getSource('comunasSource')) {
+        map.addSource('comunasSource', {
+            type: "raster",
+            tiles: [
+                "https://geoportal.cepal.org/geoserver/geonode/wms?service=WMS&version=1.1.0&request=GetMap&layers=geonode%3Acomunas_chile_3857_lineas&bbox={bbox-epsg-3857}&transparent=true&width=256&height=246&srs=EPSG%3A3857&styles=&format=image%2Fpng",
+            ],
+            tileSize: 256,
+        });
 
-    // Agrega la capa raster utilizando la fuente recién creada
-    map.addLayer({
-        id: 'comunas',
-        type: "raster",
-        source: 'comunasSource',
-        paint: {},
-    });
+        map.addLayer({
+            id: 'comunas',
+            type: "raster",
+            source: 'comunasSource',
+            paint: {},
+            minzoom: 5, // Cambia este valor al zoom mínimo deseado
+            maxzoom: 12, // Cambia este valor al zoom máximo deseado
+        });
+    }
 
-    map.addSource('poligonosPPFFSource', {
-        type: "raster",
-        tiles: [
-            "https://geoportal.cepal.org/geoserver/geonode/wms?service=WMS&version=1.1.0&request=GetMap&layers=geonode%3AppffMayoCUT&bbox={bbox-epsg-3857}&transparent=true&width=256&height=246&srs=EPSG%3A3857&styles=&format=image%2Fpng",
-        ],
-        tileSize: 256,
-    });
+    function fetchAndLoadRegionData(selectedRegion) {
+        // Realizar la solicitud fetch para obtener los datos de la región seleccionada
+        fetch(`https://geoportal.cepal.org/geoserver/geonode/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=geonode%3AppffCentroide&outputFormat=application%2Fjson&CQL_FILTER=CUT_REG='${selectedRegion}'`)
+            .then(response => response.json())
+            .then(data => {
+                // Remover la fuente de datos anteriores si existen
+                if (map.getSource('proyectos-source')) {
+                    map.getSource('proyectos-source').setData(data);
+                } else {
+                    // Agregar la fuente de datos GeoJSON al mapa con los datos obtenidos
+                    map.addSource('proyectos-source', {
+                        type: 'geojson',
+                        data: data,
+                        cluster: false,
+                    });
 
-    // Agrega la capa raster utilizando la fuente recién creada
-    map.addLayer({
-        id: 'poligonosPPFF',
-        type: "raster",
-        source: 'poligonosPPFFSource',
-        paint: {},
-    });
-
-
-    // Realizar la solicitud fetch para obtener los datos de la fuente WFS
-    fetch('https://geoportal.cepal.org/geoserver/geonode/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=geonode%3AppffCentroide&outputFormat=application%2Fjson')
-        .then(response => response.json())
-        .then(data => {
-            // Agregar la fuente de datos GeoJSON al mapa con los datos obtenidos
-            map.addSource('proyectos-source', {
-                type: 'geojson',
-                data: data,
-                cluster: false, // Habilitar clustering
-           
-            });
-
-            // Agregar la capa de puntos al mapa como círculos
-            map.addLayer({
-                id: 'proyectos-layer',
-                type: 'circle', // Cambiado a 'circle'
-                source: 'proyectos-source',
-                paint: {
-                    'circle-radius': 6, // Radio del círculo
-                    'circle-color': [
-                        'case',
-                        ['==', ['get', 'TENENCIA'], '1.CON ADMINISTRACION'], // Condición para "Sí"
-                        '#006FB3', // Color azul para "Sí"
-                        ['==', ['get', 'TENENCIA'], '6.EN ADMINISTRACION MBN D.L. 1.939 Y CON OCUPANTE'], // Condición para "No"
-                        '#FE6565', // Color rojo para "No"
-                        'gray' // Color por defecto (si no es ni "Sí" ni "No")
-                    ],
-                    'circle-stroke-color': 'white', // Color del borde
-                    'circle-stroke-width': 1 // Ancho del borde
+                    // Agregar la capa de puntos al mapa como círculos
+                    map.addLayer({
+                        id: 'proyectos-layer',
+                        type: 'circle',
+                        source: 'proyectos-source',
+                        paint: {
+                            'circle-radius': 6,
+                            'circle-color': [
+                                'case',
+                                ['==', ['get', 'TENENCIA'], '1.CON ADMINISTRACION'],
+                                '#006FB3',
+                                ['==', ['get', 'TENENCIA'], '6.EN ADMINISTRACION MBN D.L. 1.939 Y CON OCUPANTE'],
+                                '#FE6565',
+                                'gray'
+                            ],
+                            'circle-stroke-color': 'white',
+                            'circle-stroke-width': 1
+                        },
+                        layout: {
+                            'visibility': 'visible'
+                        }
+                    });
                 }
             });
+    }
 
-            // Agregar la capa de texto al mapa
-            map.addLayer({
-                id: 'proyectos-text-layer',
-                type: 'symbol',
-                source: 'proyectos-source',
-                layout: {
-                    'text-field': [
-                        'coalesce', // Utiliza coalesce para obtener el primer valor no nulo
-                        ['get', 'NOMBRE'], // Intenta obtener el valor de 'NOMBRE_PRO'
-                    ],
-                    'text-variable-anchor': ['top', 'bottom', 'left', 'right'],
-                    'text-radial-offset': 0.5,
-                    'text-justify': 'auto',
-                    "text-size": {
-                        "stops": [
-                            [0, 0],
-                            [4, 0],
-                            [6, 0],
-                            [8, 0],
-                            [9, 0],
-                            [10, 12],
-                            [12, 14],
-                        ]
-                    },
-                    'text-allow-overlap': false,
-                    'text-optional': true
-                },
-                paint: {
-                    'text-color': 'black', // Color del texto
-                    'text-halo-color': 'white', // Color del buffer blanco
-                    'text-halo-width': 2, // Ancho del buffer
-                }
-            })
-            });
+    $(".regionDropdown").change(function () {
+        var selectedRegion = $(this).val();
+        var selectedOption = regionOptions.find(
+            (option) => option.value === selectedRegion
+        );
 
+        // Centrar el mapa en la región seleccionada
+        map.fitBounds(selectedOption.bounds, {
+            padding: 20,
+            maxZoom: 10,
+            duration: 2000
+        });
 
+        // Cargar los datos de la región seleccionada
+        fetchAndLoadRegionData(selectedRegion);
 
-            // Actualizar el contenido del elemento con id 'nacional'
-            document.getElementById('nacional').innerHTML = `
-                         <div class="container-fluid estadisticas">
-                         <div class="row">
-                         <p style="background-color:#0A132D;color:white; border-radius:0.3rem" class="col-12 text-center mb-1">Total Nacional</p>                           
-                           <div class="col-12">  
-                             <div class="row">
-                             <div class="col-sm-6 m-0 p-0">
-                             <div class="card m-0 p-0 text-center">
-                             <p style="font-size:1rem;font-weight:bold;color:#FE6565" class="mb-2">Inmuebles</p>
-                             <p style="font-size:2rem;font-weight:bold;color:#FE6565"class="mb-0">924</p>
-                                 </div>
-                               </div>
-                               
-                               <div class="col-sm-6 m-0 p-0">
-                               <div class="card m-0 p-0 text-center">
-                               <p style="font-size:1rem;font-weight:bold;color:#0A132D" class="mb-2">Hectáreas</p>
-                               <p style="font-size:1rem;font-weight:bold;color:#0A132D"class="mb-0">7.574.761.407 MM</p>
-                                 </div>
-                               </div>
-                           
-                             </div>
-                           </div>
-                         </div>
-                       </div>                                 
-                         `
-                ;
+        // Esperar a que la capa esté agregada y el mapa esté inactivo antes de realizar cálculos
+        map.once('sourcedata', () => {
+            if (map.getLayer('proyectos-layer')) {
+                // Realizar los cálculos y actualizar el contenido del div cuando el mapa esté inactivo
+                map.once('idle', function () {
+                    const features = map.queryRenderedFeatures({ layers: ['proyectos-layer'] });
+
+                    // CONTAR INMUEBLES FISCALES DE LA REGIÓN SELECCIONADA
+                    let totalInmueblesRegion = 0;
+
+                    // Iterar sobre las características y contar los proyectos de la región seleccionada
+                    features.forEach(function (feature) {
+                        if (feature.properties && feature.properties.JOIN_COUNT && feature.properties.CUT_REG === selectedRegion) {
+                            totalInmueblesRegion += parseFloat(feature.properties.JOIN_COUNT);
+                        }
+                    });
+
+                    // SUMAR HECTÁREAS DE PPFF DE LA REGIÓN SELECCIONADA
+                    let sumaHaRegion = 0;
+                    features.forEach(function (feature) {
+                        if (feature.properties && feature.properties.ha_txt && feature.properties.CUT_REG === selectedRegion) {
+                            const monto = feature.properties.CTOTAL;
+                            if (monto !== '-') {
+                                sumaHaRegion += parseFloat(monto);
+                            }
+                        }
+                    });
+
+                    // Actualizar el contenido del elemento con id 'nacional'
+                    document.getElementById('nacional').innerHTML = `
+                        <div class="container-fluid estadisticas">
+                            <div class="row">
+                                <p style="background-color:#0A132D;color:white; border-radius:0.3rem" class="col-12 text-center mb-1">Total Nacional</p>                           
+                                <div class="col-12">  
+                                    <div class="row">
+                                        <div class="col-sm-6 m-0 p-0">
+                                            <div class="card m-0 p-0 text-center">
+                                                <p style="font-size:1rem;font-weight:bold;color:#FE6565" class="mb-2">Inmuebles</p>
+                                                <p style="font-size:2rem;font-weight:bold;color:#FE6565"class="mb-0">31000</p>
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-6 m-0 p-0">
+                                            <div class="card m-0 p-0 text-center">
+                                                <p style="font-size:1rem;font-weight:bold;color:#0A132D" class="mb-2">Hectáreas</p>
+                                                <p style="font-size:1rem;font-weight:bold;color:#0A132D"class="mb-0"></p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>`;
+
+                    // Actualizar el contenido del elemento con id 'regional'
+                    document.getElementById('regional').innerHTML = `
+                        <div class="container-fluid estadisticas">
+                            <div class="row">
+                                <p style="background-color:#0A132D;color:white; border-radius:0.3rem" class="col-12 text-center mb-1">Región de ${selectedOption.label}</p>
+                                <div class="col-12">
+                                    <div class="row">
+                                        <div class="col-sm-6 m-0 p-0">
+                                            <div class="card m-0 p-0 text-center">
+                                                <p style="font-size:1rem;font-weight:bold;color:#FE6565" class="mb-2">Proyectos</p>
+                                                <p style="font-size:2rem;font-weight:bold;color:#FE6565"class="mb-0">${totalInmueblesRegion}</p>
+                                            </div>
+                                        </div>
+                                        <div class="col-sm-6 m-0 p-0">
+                                            <div class="card m-0 p-0 text-center">
+                                                <p style="font-size:1rem;font-weight:bold;color:#0A132D" class="mb-2">Hectáreas</p>                               
+                                                <p style="font-size:1rem;font-weight:bold;color:#0A132D"class="mb-0">${sumaHaRegion}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>`;
+                });
+            }
+        });
+    });
+});
+
 
             // Función para filtrar las opciones del dropdown según la palabra clave ingresada
             function filtrarDropdown(dropdown, keyword) {
@@ -227,84 +256,7 @@ map.on('load', () => {
                     filtrarDropdown(dropdown, keyword);
                 }
             });
-
-            // Actualizar contador al mover el mapa
-            map.on('idle', function () {
-                // SUMAR POR RENDERIZADOS FILTRANDO POR CODIGO DE REGION SELECCIONADA:
-                const features = map.queryRenderedFeatures({ layers: ['proyectos-layer'] });
-
-                const vistaActual = features.length;
-
-                // SUMAR PLATA
-                let sumaMonto = 0;
-
-                // Iterar sobre las características y sumar los montos
-                features.forEach(function (feature) {
-                    // Verificar si la característica tiene la propiedad 'CTOTAL'
-                    if (feature.properties && feature.properties.CTOTAL) {
-                        // Obtener el monto de la característica y verificar que no sea "-"
-                        const monto = feature.properties.CTOTAL;
-                        if (monto !== '-') {
-                            // Sumar el monto convertido a número
-                            sumaMonto += parseFloat(monto);
-                        }
-                    }
-                });
-
-                // Ahora `sumaMonto` contiene la suma total de los montos válidos
-                console.log('Suma total del monto:', sumaMonto);
-
-
-                // Transformar el número de la suma de montos con puntos cada tres dígitos y reemplazar puntos y comas
-                const sumaMontoFormateada = sumaMonto.toLocaleString('es-ES', { maximumFractionDigits: 0 });
-
-                // Mostrar la suma de montos formateada
-                console.log('Suma de Montos:', sumaMontoFormateada);
-
-                // SUMAR EMPLEOS
-                let sumaEmpleosConstruccion = 0;
-
-                // Iterar sobre las características y sumar los empleos
-                features.forEach(function (feature) {
-                    // Verificar si la característica tiene las propiedades 'Empleos_Op' y 'Empleos_Co'
-                    if (feature.properties && feature.properties.Empleos_Op && feature.properties.Empleos_Co) {
-                        // Obtener los empleos de la característica y sumarlos
-                        sumaEmpleosConstruccion += parseFloat(feature.properties.Empleos_Op) + parseFloat(feature.properties.Empleos_Co);
-                    }
-                });
-
-                // Mostrar la suma de montos
-                console.log('Suma de Montos:', sumaEmpleosConstruccion);
-
-                // Actualizar el contenido del div con el contador
-                document.getElementById('extent').innerHTML = `
-                    <div class="container-fluid estadisticas">
-                    <div class="row">
-                    <p style="background-color:#0A132D;color:white; border-radius:0.3rem" class="col-12 text-center mb-1">Vista actual</p>
-                        <div class="col-12">
-                            <div class="row">
-                                <div class="col-sm-6 m-0 p-0">
-                                    <div class="card m-0 p-0 text-center">
-                                    <p style="font-size:1rem;font-weight:bold;color:#FE6565" class="mb-2">Inmuebles</p>
-                                    <p style="font-size:2rem;font-weight:bold;color:#FE6565"class="mb-0">${vistaActual}</p>                                                         
-                                    </div>
-                                </div>
-
-                                <div class="col-sm-6 m-0 p-0">
-                                    <div class="card m-0 p-0 text-center">
-                                    <p style="font-size:1rem;font-weight:bold;color:#0A132D" class="mb-2">Hectáreas</p>
-                                    <p style="font-size:1rem;font-weight:bold;color:#0A132D"class="mb-0">${sumaMontoFormateada} MM</p>
-                                    </div>
-                                </div>
-
-                             
-                            </div>
-                        </div>
-                    </div>
-                </div>                    
-        `;
-            });
-        });
+         
 
     // Evento de clic en la capa de puntos
     map.on('click', 'proyectos-layer', function (e) {
@@ -331,65 +283,65 @@ map.on('load', () => {
 
 
 
-map.on('idle', function () {
-    // Obtén las features en la vista actual
-    const features = map.queryRenderedFeatures({ layers: ['proyectos-layer'] });
-
-    // Construye la lista de nombres de proyectos visibles en la vista actual
-    const nombreProyectos = features.map(feature => ({
-        nombre: feature.properties.ID,
-        coordenadas: feature.geometry.coordinates
-    }));
-
-    // Llenar el dropdown con los nombres de los proyectos
-    const dropdownProyectos = $(".nombreProyectoDropdown");
-    dropdownProyectos.empty(); // Vaciar el dropdown antes de llenarlo nuevamente
-    dropdownProyectos.append(
-        $("<option>", {
-            value: "",
-            text: "ID Catastral",
-        })
-    );
-
-    nombreProyectos.forEach(proyecto => {
-        if (proyecto.nombre) {
-            dropdownProyectos.append(
-                $("<option>", {
-                    value: proyecto.nombre,
-                    text: proyecto.nombre,
-                })
-            );
-        }
-    });
-
-    // Evitar agregar múltiples eventos 'change'
-    dropdownProyectos.off('change'); // Elimina cualquier evento 'change' anterior
-
-    // Evento que se activa al cambiar la selección en la lista desplegable del proyecto
-    dropdownProyectos.on('change', function () {
-        const selectedProjectName = $(this).val();
-        const selectedProject = nombreProyectos.find(
-            proyecto => proyecto.nombre === selectedProjectName
+    map.on('idle', function () {
+        // Obtén las features en la vista actual
+        const features = map.queryRenderedFeatures({ layers: ['proyectos-layer'] });
+    
+        // Construye la lista de nombres de proyectos visibles en la vista actual
+        const nombreProyectos = features.map(feature => ({
+            nombre: feature.properties.NOMBRE,
+            coordenadas: feature.geometry.coordinates
+        }));
+    
+        // Llenar el dropdown con los nombres de los proyectos
+        const dropdownProyectos = $(".nombreProyectoDropdown");
+        dropdownProyectos.empty(); // Vaciar el dropdown antes de llenarlo nuevamente
+        dropdownProyectos.append(
+            $("<option>", {
+                value: "",
+                text: "Proyecto",
+            })
         );
+    
+        nombreProyectos.forEach(proyecto => {
+            if (proyecto.nombre) {
+                dropdownProyectos.append(
+                    $("<option>", {
+                        value: proyecto.nombre,
+                        text: proyecto.nombre,
+                    })
+                );
+            }
+        });
+    
+        // Evitar agregar múltiples eventos 'change'
+        dropdownProyectos.off('change'); // Elimina cualquier evento 'change' anterior
+    
+        // Evento que se activa al cambiar la selección en la lista desplegable del proyecto
+        dropdownProyectos.on('change', function () {
+            const selectedProjectName = $(this).val();
+            const selectedProject = nombreProyectos.find(
+                proyecto => proyecto.nombre === selectedProjectName
+            );
+    
+            if (selectedProject) {
+                // Centrar el mapa en la ubicación del proyecto seleccionado
+                map.flyTo({
+                    center: selectedProject.coordenadas,
+                    zoom: 14 // Ajusta el nivel de zoom según sea necesario
+                });
+            }
+        });
 
-        if (selectedProject) {
-            // Centrar el mapa en la ubicación del proyecto seleccionado
-            map.flyTo({
-                center: selectedProject.coordenadas,
-                zoom: 14 // Ajusta el nivel de zoom según sea necesario
-            });
-        }
-    });
-
-   // Construye la lista de códigos BIP visibles en la vista actual
-const codigoBIP = features.map(feature => ({
-    BIP: feature.properties.NOMBRE,
+   // Construye la lista de códigos ID visibles en la vista actual
+const IDcatastral = features.map(feature => ({
+    ID: feature.properties.NOMBRE,
     nombrePPFF: feature.properties.NOMBRE, // Incluye el campo NOMBRE en la variable nombrePPFF
     coordenadas: feature.geometry.coordinates
 }));
 
-// Llenar el dropdown con los códigos BIP de los proyectos
-const dropDownNombrePPFF = $(".codigoBIPDropdown");
+// Llenar el dropdown con los códigos ID de los proyectos
+const dropDownNombrePPFF = $(".IDcatastralDropdown");
 
 // Crear el input
 const inputElement = $("<input>", {
@@ -401,7 +353,7 @@ const inputElement = $("<input>", {
 // Agregar el input antes de las opciones en el dropdown
 dropDownNombrePPFF.prepend(inputElement);
 
-// Luego, agregar la opción para "Código BIP" después del input
+// Luego, agregar la opción para "Código ID" después del input
 dropDownNombrePPFF.prepend(
     $("<option>", {
         value: "",
@@ -409,12 +361,12 @@ dropDownNombrePPFF.prepend(
     })
 );
 
-codigoBIP.forEach(BIP => {
-    if (BIP.BIP) {
+IDcatastral.forEach(ID => {
+    if (ID.ID) {
         dropDownNombrePPFF.append(
             $("<option>", {
-                value: BIP.BIP,
-                text: `${BIP.BIP} - ${BIP.nombrePPFF || ''}` // Mostrar tanto el código BIP como el nombrePPFF
+                value: ID.ID,
+                text: `${ID.ID} - ${ID.nombrePPFF || ''}` // Mostrar tanto el código ID como el nombrePPFF
             })
         );
     }
@@ -425,15 +377,15 @@ dropDownNombrePPFF.off('change'); // Elimina cualquier evento 'change' anterior
 
 // Evento que se activa al cambiar la selección en la lista desplegable del proyecto
 dropDownNombrePPFF.on('change', function () {
-    const selectedCodigoBIPname = $(this).val();
-    const selectedCodigoBIP = codigoBIP.find(
-        BIP => BIP.BIP === selectedCodigoBIPname
+    const selectedIDcatastralname = $(this).val();
+    const selectedIDcatastral = IDcatastral.find(
+        ID => ID.ID === selectedIDcatastralname
     );
 
-    if (selectedCodigoBIP) {
+    if (selectedIDcatastral) {
         // Centrar el mapa en la ubicación del proyecto seleccionado
         map.flyTo({
-            center: selectedCodigoBIP.coordenadas,
+            center: selectedIDcatastral.coordenadas,
             zoom: 14 // Ajusta el nivel de zoom según sea necesario
         });
     }
@@ -463,7 +415,7 @@ dropDownNombrePPFF.on('change', function () {
             // Construir el contenido de la tarjeta
             let cardContent = `
                 <div class="card ficha${isFirstElement ? ' first-element' : ''}" onclick="centrarMapa('${featureId}')">
-                    ${nombre ? `<p class="nombre">${nombre} (BIP: ${id})</p>` : ''}
+                    ${nombre ? `<p class="nombre">${nombre} (ID: ${id})</p>` : ''}
                     ${comuna && region ? `<p class="ubicacion">Comuna de ${comuna}, región de ${region}</p>` : ''}
                     ${descripcion ? `<p><span class="etiqueta">Descripción</span> ${descripcion}</p>` : ''}
                     ${superficieM2 ? `<p><span class="etiqueta">Superficie M2</span> ${superficieM2}</p>` : ''}
@@ -912,7 +864,7 @@ $(".regionDropdown").change(function () {
 function fillCommunesDropdown(selectedRegion) {
     // Filtra las comunas
     var filteredCommunes = comunaOptions.filter(
-        (comuna) => comuna. cut_reg === selectedRegion
+        (comuna) => comuna.cut_reg === selectedRegion
     );
 
     // Elimina todas las opciones existentes de la lista desplegable
@@ -951,34 +903,34 @@ $(".regionDropdown").change(function () {
         const features = map.queryRenderedFeatures({ layers: ['proyectos-layer'] });
 
         // CONTAR PROYECTOS DE LA REGIÓN SELECCIONADA
-        let totalProyectosRegion = 0;
+        let totalHaRegion = 0;
 
         // Iterar sobre las características y contar los proyectos de la región seleccionada
         features.forEach(function (feature) {
             // Verificar si la característica tiene las propiedades necesarias y si pertenece a la región seleccionada
-            if (feature.properties && feature.properties.JOIN_COUNT && feature.properties. cut_reg === selectedRegion) {
+            if (feature.properties && feature.properties.JOIN_COUNT && feature.properties.CUT_REG === selectedRegion) {
                 // Incrementar el contador de proyectos de la región seleccionada
-                totalProyectosRegion += parseFloat(feature.properties.JOIN_COUNT);
+                totalHaRegion += parseFloat(feature.properties.JOIN_COUNT);
             }
         });
 // SUMAR MONTOS DE PROYECTOS DE LA REGIÓN SELECCIONADA
-let sumaMontoRegion = 0;
+let sumaHaRegion = 0;
 
 // Iterar sobre las características y sumar los montos de los proyectos de la región seleccionada
 features.forEach(function (feature) {
     // Verificar si la característica tiene las propiedades necesarias y si pertenece a la región seleccionada
-    if (feature.properties && feature.properties.CTOTAL && feature.properties. cut_reg === selectedRegion) {
+    if (feature.properties && feature.properties.ha_txt && feature.properties.CUT_REG === selectedRegion) {
         // Obtener el monto de la característica y verificar que no sea "-"
-        const monto = feature.properties.CTOTAL;
+        const monto = feature.properties.ha_txt;
         if (monto !== '-') {
             // Sumar el monto convertido a número
-            sumaMontoRegion += parseFloat(monto);
+            sumaHaRegion += parseFloat(monto);
         }
     }
 });
 
-// Ahora `sumaMontoRegion` contiene la suma total de los montos válidos
-console.log('Suma total del monto en la región seleccionada:', sumaMontoRegion);
+// Ahora `sumaHaRegion` contiene la suma total de los montos válidos
+console.log('Suma total hectáreas de PPFF en la región seleccionada:', sumaHaRegion);
 
 
         // SUMAR EMPLEOS DE LA REGIÓN SELECCIONADA
@@ -987,14 +939,14 @@ console.log('Suma total del monto en la región seleccionada:', sumaMontoRegion)
         // Iterar sobre las características y sumar los empleos de los proyectos de la región seleccionada
         features.forEach(function (feature) {
             // Verificar si la característica tiene las propiedades necesarias y si pertenece a la región seleccionada
-            if (feature.properties && feature.properties.Empleos_Op && feature.properties.Empleos_Co && feature.properties. cut_reg === selectedRegion) {
+            if (feature.properties && feature.properties.Empleos_Op && feature.properties.Empleos_Co && feature.properties.CUT_REG === selectedRegion) {
                 // Obtener la cantidad de empleos de la característica y sumarlos
                 sumaEmpleosRegion += parseFloat(feature.properties.Empleos_Op) + parseFloat(feature.properties.Empleos_Co);
             }
         });
 
         // Transformar el número de la suma de montos con puntos cada tres dígitos y reemplazar puntos y comas
-        const sumaMontoRegionFormateada = sumaMontoRegion.toLocaleString('es-ES', { maximumFractionDigits: 0 });
+        const sumaHaRegionFormateada = sumaHaRegion.toLocaleString('es-ES', { maximumFractionDigits: 0 });
 
         // Actualiza el contenido del div con los resultados REGIONALES
         document.getElementById('regional').innerHTML = `
@@ -1006,14 +958,14 @@ console.log('Suma total del monto en la región seleccionada:', sumaMontoRegion)
                         <div class="col-sm-6 m-0 p-0">
                             <div class="card m-0 p-0 text-center">
                             <p style="font-size:1rem;font-weight:bold;color:#FE6565" class="mb-2">Proyectos</p>
-                            <p style="font-size:2rem;font-weight:bold;color:#FE6565"class="mb-0">${totalProyectosRegion}</p>
+                            <p style="font-size:2rem;font-weight:bold;color:#FE6565"class="mb-0">${totalHaRegion}</p>
                             </div>
                         </div>
 
                         <div class="col-sm-6 m-0 p-0">
                             <div class="card m-0 p-0 text-center">
-                            <p style="font-size:1rem;font-weight:bold;color:#0A132D" class="mb-2">Hectáreas</p>                               
-                                <p style="font-size:1rem;font-weight:bold;color:#0A132D"class="mb-0">${sumaMontoRegionFormateada} MM</p>
+                            <p style="font-size:1rem;font-weight:bold;color:#0A132D" class="mb-2">Inversión</p>                               
+                                <p style="font-size:1rem;font-weight:bold;color:#0A132D"class="mb-0">${sumaHaRegionFormateada} MM</p>
                             </div>
                         </div>
 
@@ -1025,9 +977,9 @@ console.log('Suma total del monto en la región seleccionada:', sumaMontoRegion)
 
     // Centra el mapa en la región seleccionada
     map.fitBounds(selectedOption.bounds, {
-        padding: 20,
+        padding: 10,
         maxZoom: 10,
-        duration: 2000
+        duration: 1000
     });
 });
 
@@ -1051,15 +1003,15 @@ $(".comunaDropdown").change(function () {
     map.once('idle', function () {
 
         // Realiza el conteo de proyectos, sumas de monto y empleos
-        let totalProyectosComuna = 0;
-        let sumaMontoComuna = 0;
+        let totalInmueblesComuna = 0;
+        let sumaHaComuna = 0;
         const features = map.queryRenderedFeatures({ layers: ['proyectos-layer'] });
         features.forEach(function (feature) {
             if (feature.properties && feature.properties.JOIN_COUNT && feature.properties.CUT_COM === selectedComuna) {
-                totalProyectosComuna += parseFloat(feature.properties.JOIN_COUNT);
+                totalInmueblesComuna += parseFloat(feature.properties.JOIN_COUNT);
               // Verificar si CTOTAL no es "-"
-        if (feature.properties.CTOTAL && feature.properties.CTOTAL !== "-") {
-            sumaMontoComuna += parseFloat(feature.properties.CTOTAL);
+        if (feature.properties.ha_txt && feature.properties.CTOTAL !== "-") {
+            sumaHaComuna += parseFloat(feature.properties.CTOTAL);
         }
             }
         });
@@ -1073,14 +1025,14 @@ $(".comunaDropdown").change(function () {
                     <div class="row">
                         <div class="col-sm-6 m-0 p-0">
                             <div class="card m-0 p-0 text-center">
-                            <p style="font-size:1rem;font-weight:bold;color:#FE6565" class="mb-2">Proyectos</p>
-                            <p style="font-size:2rem;font-weight:bold;color:#FE6565"class="mb-0">${totalProyectosComuna}</p>
+                            <p style="font-size:1rem;font-weight:bold;color:#FE6565" class="mb-2">Inmuebles</p>
+                            <p style="font-size:2rem;font-weight:bold;color:#FE6565"class="mb-0">${totalInmueblesComuna}</p>
                             </div>
                         </div>
                         <div class="col-sm-6 m-0 p-0">
                             <div class="card m-0 p-0 text-center">
-                            <p style="font-size:1rem;font-weight:bold;color:#0A132D" class="mb-2">Inversión</p>
-                            <p style="font-size:1rem;font-weight:bold;color:#0A132D"class="mb-0">${sumaMontoComuna.toLocaleString('es-ES', { maximumFractionDigits: 0 })} MM</p>
+                            <p style="font-size:1rem;font-weight:bold;color:#0A132D" class="mb-2">Hectáreas</p>
+                            <p style="font-size:1rem;font-weight:bold;color:#0A132D"class="mb-0">${sumaHaComuna.toLocaleString('es-ES', { maximumFractionDigits: 0 })}</p>
                             </div>
                         </div>
                     </div>
@@ -1089,14 +1041,14 @@ $(".comunaDropdown").change(function () {
         </div>`;
 
         // Actualiza el número total de proyectos en la opción "Seleccionar comuna" del dropdown
-        $(".comunaDropdown option[value='']").text("Seleccionar comuna (" + totalProyectosComuna + " proyectos)");
+        $(".comunaDropdown option[value='']").text("Seleccionar comuna (" + totalInmueblesComuna + " inmuebles)");
     });
 
     // Centra el mapa en la comuna seleccionada
     map.fitBounds(selectedOption.bounds, {
-        padding: 20,
+        padding: 10,
         maxZoom: 10,
-        duration: 2000
+        duration: 1000
     });
 });
 
